@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cursor Usage Dashboard</title>
+    <!-- Include PapaParse from a CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
+    <!-- Include Chart.js from a CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: 'Gilroy', 'Circular', sans-serif; /* Lemonade-like fonts */
+            margin: 0;
+            padding: 40px;
+            background-color: #f9f9f9; /* Light background for white space */
+            color: #333;
+            display: flex;
+            flex-direction: column;
+            align-items: center; /* Center content */
+            min-height: 100vh; /* Ensure body takes at least full viewport height */
+        }
+        header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        header h1 {
+            color: #FF00A8; /* Lemonade Pink */
+            font-weight: bold;
+            margin-bottom: 20px; /* Adjusted margin */
+        }
+        .file-upload-area {
+            margin-bottom: 20px;
+            padding: 15px 25px; /* Increased padding for better click area */
+            border: 2px dashed #ddd;
+            border-radius: 8px;
+            background-color: #fff;
+            cursor: pointer;
+            transition: border-color 0.3s ease;
+            display: inline-block; /* To wrap content appropriately */
+            text-align: center;
+        }
+        .file-upload-area:hover, .file-upload-area:focus-within {
+            border-color: #FF00A8; /* Pink on hover/focus */
+        }
+        #csvFile {
+            /* Hide the default file input */
+            width: 0.1px;
+            height: 0.1px;
+            opacity: 0;
+            overflow: hidden;
+            position: absolute;
+            z-index: -1;
+        }
+        #csvFileLabel {
+            font-weight: normal; /* Style as needed */
+            cursor: pointer;
+        }
+        #loading {
+            color: #555;
+            font-style: italic;
+            margin: 20px 0;
+        }
+        main {
+            width: 100%;
+            max-width: 1200px; /* Max width for the main content area */
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        #resultsSection {
+            margin-top: 20px; /* Adjusted from 30px */
+            padding-top: 20px;
+            border-top: 1px solid #eee;
+            width: 100%;
+            text-align: center;
+        }
+        #downloadArea {
+            margin-top: 20px;
+            margin-bottom: 30px;
+        }
+        #downloadLink {
+            display: inline-block;
+            padding: 12px 25px;
+            background-image: linear-gradient(to right, #FF00A8, #c900d1);
+            color: white;
+            text-decoration: none;
+            border-radius: 25px;
+            font-weight: bold;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+        #downloadLink:hover, #downloadLink:focus {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 15px rgba(0,0,0,0.15);
+            outline: 2px solid #391085; /* Focus outline for accessibility */
+        }
+        #reportDatesDisplay {
+            margin-bottom: 20px;
+            font-size: 1.1em;
+            color: #555;
+        }
+        #dashboardArea {
+            width: 100%;
+            /* max-width is on main now */
+            margin-top: 20px; /* Adjusted */
+        }
+        .key-metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        .metric-card {
+            background-color: #fff;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.07);
+            text-align: center;
+        }
+        .metric-card h4 {
+            margin-top: 0;
+            margin-bottom: 10px;
+            color: #391085;
+            font-size: 1em;
+            font-weight: normal;
+        }
+        .metric-card .metric-value {
+            font-size: 2.2em;
+            font-weight: bold;
+            color: #FF00A8;
+            margin-bottom: 5px;
+        }
+        .metric-card .metric-unit {
+            font-size: 0.9em;
+            color: #777;
+        }
+        .charts-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 20px;
+        }
+        .chart-container {
+            background-color: #fff;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.07);
+            height: 350px;
+        }
+        .chart-container h4 {
+            text-align: center;
+            margin-top: 0;
+            margin-bottom: 15px;
+            color: #391085;
+        }
+
+        /* Style for drag-over feedback on the label */
+        .file-upload-area label.drag-over-label {
+            font-weight: bold;
+            color: #FF00A8; /* Lemonade Pink */
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Cursor Usage Dashboard</h1>
+        <div class="file-upload-area">
+            <label for="csvFile" id="csvFileLabel">Click or Drag to Upload CSV File</label>
+            <input type="file" id="csvFile" accept=".csv">
+        </div>
+        <p style="font-size: 0.9em; color: #555; margin-top: 10px; text-align: center;">
+            (Here is where you can get the raw CSV: <a href="https://www.cursor.com/analytics" target="_blank">Cursor Analytics</a>)
+        </p>
+        <div class="search-container" style="margin-top: 20px; text-align: center; width: 100%; max-width: 400px; position: relative; display: none;">
+            <input type="text" id="userSearchInput" placeholder="Search for a user by email..." style="width: 100%; padding: 10px; border-radius: 5px; border: 1px solid #ccc; box-sizing: border-box;">
+            <div id="autocompleteSuggestions" style="position: absolute; width: 100%; border: 1px solid #ddd; background-color: white; z-index: 1000; max-height: 150px; overflow-y: auto; display: none;">
+                <!-- Autocomplete suggestions will be populated here -->
+            </div>
+        </div>
+    </header>
+
+    <main>
+        <div id="loading" style="display: none;">Processing... Please Wait</div>
+
+        <section id="resultsSection">
+            <p id="processMessage"></p>
+            <div id="downloadArea">
+                <a id="downloadLink" href="#" style="display:none;">Generate & Download Report</a>
+            </div>
+            <div id="reportDatesDisplay" style="display: none; text-align: center; /* Style already applied */">
+                <!-- Report dates will be dynamically added here -->
+            </div>
+            <div id="dashboardArea" style="display: none;">
+                <div class="key-metrics-grid" id="keyMetricsDisplay">
+                    <!-- Key metrics will be dynamically added here -->
+                </div>
+                <div class="charts-grid" id="chartsDisplay">
+                    <!-- Charts will be dynamically added here -->
+                </div>
+                <div class="inactive-users-section" id="inactiveUsersDisplay" style="margin-top: 30px; background-color: #fff; padding: 20px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.07);">
+                    <h4 style="text-align: center; margin-top: 0; margin-bottom: 15px; color: #391085;">Inactive Users</h4>
+                    <ul id="inactiveUserList" style="list-style-type: none; padding: 0; max-height: 300px; overflow-y: auto;">
+                        <!-- Inactive users will be listed here -->
+                    </ul>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <script src="script.js" defer></script>
+
+</body>
+</html> 
