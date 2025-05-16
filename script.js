@@ -1483,8 +1483,12 @@
                 const dailyInteractions = getDailyPromptInteractions(currentFilteredData);
                 renderDailyInteractionsChart(dailyInteractions, 'userDailyInteractionsChart', chartsContainerEl);
             }
+
+            // 6. Client Version (placed last)
+            const clientVersion = singleUserData[COLUMN_CLIENT_VERSION] || 'N/A';
+            renderTextMetricInChartSlot('Client Version', clientVersion, 'userClientVersionMetric', chartsContainerEl);
             
-            // 6. Hide Inactive Users Section
+            // 7. Hide Inactive Users Section
             if (inactiveUsersDisplayEl) {
                 inactiveUsersDisplayEl.style.display = 'none';
             }
@@ -1528,6 +1532,10 @@
             const topPowerUsers = getTop10PowerUsers(aggregatedData);
             renderTopPowerUsersChart(topPowerUsers, chartsContainerEl);
 
+            // Add Daily Interactions Chart for all users
+            const dailyInteractions = getDailyPromptInteractions(rawCsvData);
+            renderDailyInteractionsChart(dailyInteractions, 'allUsersDailyInteractionsChart', chartsContainerEl);
+
             const topAiSuggestionUsers = getTopUsersByRate(aggregatedData, COLUMN_CHAT_TOTAL_ACCEPTS, COLUMN_CHAT_TOTAL_APPLIES, 10);
             renderTopUsersRateChart(
                 'Top 10 AI Suggestion Users',
@@ -1550,9 +1558,9 @@
                 '#1976D2'
             );
 
-            // Add Daily Interactions Chart for all users
-            const dailyInteractions = getDailyPromptInteractions(rawCsvData);
-            renderDailyInteractionsChart(dailyInteractions, 'allUsersDailyInteractionsChart', chartsContainerEl);
+            // Client Version Distribution (placed last)
+            const versionDistribution = getClientVersionDistribution(aggregatedData);
+            renderClientVersionChart(versionDistribution, chartsContainerEl);
 
             // Show and populate Inactive Users Section
             if (inactiveUsersDisplayEl) {
@@ -1883,6 +1891,87 @@
                         callbacks: {
                             label: function(context) {
                                 return `Interactions: ${context.parsed.y}`;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    /**
+     * Calculates the distribution of client versions across users.
+     * @param {Array<Object>} data - The aggregated data.
+     * @returns {Array<{version: string, userCount: number}>} An array of objects containing version and user count.
+     */
+    function getClientVersionDistribution(data) {
+        const versionCounts = new Map();
+        
+        // Count users per version
+        data.forEach(user => {
+            const version = user[COLUMN_CLIENT_VERSION] || 'Unknown';
+            versionCounts.set(version, (versionCounts.get(version) || 0) + 1);
+        });
+
+        // Convert to array and sort by version number
+        const distribution = Array.from(versionCounts.entries()).map(([version, count]) => ({
+            version,
+            userCount: count
+        }));
+
+        // Sort versions using the compareVersions function
+        distribution.sort((a, b) => compareVersions(a.version, b.version));
+
+        return distribution;
+    }
+
+    /**
+     * Renders a bar chart showing the distribution of client versions.
+     * @param {Array<{version: string, userCount: number}>} versionData - The version distribution data.
+     * @param {HTMLElement} containerElement - The HTML element to append the chart to.
+     */
+    function renderClientVersionChart(versionData, containerElement) {
+        const ctx = createChartCanvas('Client Version Distribution', 'clientVersionChart', containerElement);
+        if (!ctx) return;
+
+        if (!versionData || versionData.length === 0) {
+            const chartWrapper = ctx.canvas.parentElement;
+            if (chartWrapper) {
+                chartWrapper.innerHTML = '<h4>Client Version Distribution</h4><p style="text-align: center; padding-top: 20px;">No version data available.</p>';
+            }
+            return;
+        }
+
+        new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: versionData.map(item => item.version),
+                datasets: [{
+                    label: 'Number of Users',
+                    data: versionData.map(item => item.userCount),
+                    backgroundColor: '#00C4FF', // Lemonade Blue
+                    borderColor: '#00A0D1',
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            stepSize: 1
+                        }
+                    }
+                },
+                plugins: {
+                    title: {
+                        display: false
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                const count = context.parsed.y;
+                                return `${count} user${count !== 1 ? 's' : ''}`;
                             }
                         }
                     }
