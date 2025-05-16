@@ -65,6 +65,7 @@
     const searchContainerEl = document.querySelector('.search-container');
     let originalAggregatedData = []; // To store the full dataset
     let currentFilteredData = []; // To store the currently displayed dataset (full or filtered)
+    let rawCsvData = []; // Add this at the top level of the IIFE
 
     if (!csvFileInput) {
         console.error("CRITICAL: CSV File Input element ('csvFile') not found. App cannot initialize.");
@@ -257,6 +258,7 @@
      * @param {Array<Object<string, string>>} data - The array of data rows parsed from the CSV.
      */
     function processParsedData(data) {
+        rawCsvData = data; // Store the raw data
         console.log('[DEBUG] Calling aggregateCsvData...');
         const aggregationResult = aggregateCsvData(data);
         console.log('[DEBUG] aggregateCsvData returned:', aggregationResult);
@@ -546,27 +548,24 @@
 
     function parseDate(dateString) {
         if (!dateString) return null;
-        // Attempt to handle DD-MM-YYYY and other common formats that Date constructor might parse
-        // For more robust parsing, especially for DD-MM-YYYY, a more specific parsing logic is needed
-        // as new Date('DD-MM-YYYY') is not reliable across all JS environments.
-        // Example: "01-12-2023" (1st Dec) might be "12-Jan-2023" in some engines if not parsed carefully.
 
-        // Check for DD-MM-YYYY explicitly
+        // Try ISO format first (most common in our data)
+        const isoDate = new Date(dateString);
+        if (!isNaN(isoDate.getTime())) {
+            return isoDate;
+        }
+
+        // Fallback to DD-MM-YYYY format for backward compatibility
         const parts = dateString.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
-        let date;
         if (parts) {
-            // parts[1] is day, parts[2] is month, parts[3] is year
-            date = new Date(parts[3], parts[2] - 1, parts[1]); // Month is 0-indexed
-        } else {
-            // Fallback to standard Date constructor for other formats (e.g., ISO, YYYY-MM-DD)
-            date = new Date(dateString);
+            const date = new Date(parts[3], parts[2] - 1, parts[1]); // Month is 0-indexed
+            if (!isNaN(date.getTime())) {
+                return date;
+            }
         }
 
-        if (isNaN(date.getTime())) {
-            console.warn("Could not parse date:", dateString);
-            return null;
-        }
-        return date;
+        console.warn("Could not parse date:", dateString);
+        return null;
     }
 
     function formatDateWithoutTime(date) {
@@ -574,7 +573,7 @@
         const year = date.getFullYear();
         const month = (date.getMonth() + 1).toString().padStart(2, '0'); // Month is 0-indexed
         const day = date.getDate().toString().padStart(2, '0');
-        return `${day}-${month}-${year}`; // Changed to DD-MM-YYYY
+        return `${year}-${month}-${day}`; // Return the formatted date string
     }
 
     function compareVersions(v1, v2) {
@@ -1343,7 +1342,7 @@
      * @param {Array<Object>} aggregatedData - The fully aggregated and formatted data ready for display.
      * @param {HTMLElement} chartsContainerEl - The HTML element that will serve as the container for the main charts grid (e.g., a `div` with class 'charts-grid').
      */
-    function displayDashboardMetrics(aggregatedData, chartsContainerEl) {
+    function displayDashboardMetrics(aggregatedData, chartsContainerEl, rawUserData = null) {
         console.log('displayDashboardMetrics called.');
         // const dashboardArea = document.getElementById('dashboardArea'); // Already cached as dashboardAreaEl
         console.log('dashboardArea element (cached as dashboardAreaEl):', dashboardAreaEl);
@@ -1475,6 +1474,15 @@
             } else {
                 renderTextMetricInChartSlot('"Tab" Suggestion Rate', 'N/A', 'userTabConversionChart', chartsContainerEl);
             }
+
+            // Add Daily Interactions Chart for single user
+            if (rawUserData) {
+                const dailyInteractions = getDailyPromptInteractions(rawUserData);
+                renderDailyInteractionsChart(dailyInteractions, 'userDailyInteractionsChart', chartsContainerEl);
+            } else {
+                const dailyInteractions = getDailyPromptInteractions(currentFilteredData);
+                renderDailyInteractionsChart(dailyInteractions, 'userDailyInteractionsChart', chartsContainerEl);
+            }
             
             // 6. Hide Inactive Users Section
             if (inactiveUsersDisplayEl) {
@@ -1541,6 +1549,10 @@
                 '#2196F3', 
                 '#1976D2'
             );
+
+            // Add Daily Interactions Chart for all users
+            const dailyInteractions = getDailyPromptInteractions(rawCsvData);
+            renderDailyInteractionsChart(dailyInteractions, 'allUsersDailyInteractionsChart', chartsContainerEl);
 
             // Show and populate Inactive Users Section
             if (inactiveUsersDisplayEl) {
@@ -1706,26 +1718,28 @@
      */
     function filterAndDisplayUser(email) {
         if (!originalAggregatedData) return;
+        
         currentFilteredData = originalAggregatedData.filter(user => user[COLUMN_EMAIL] === email);
         
         if (currentFilteredData.length > 0) {
-            console.log(`[DEBUG] Filtering for user: ${email}. Data found:`, currentFilteredData);
+            // Get raw data for daily interactions chart
+            const userRawData = rawCsvData.filter(row => row[COLUMN_EMAIL] === email);
+            
             if (chartsDisplayEl) {
-                displayDashboardMetrics(currentFilteredData, chartsDisplayEl);
+                displayDashboardMetrics(currentFilteredData, chartsDisplayEl, userRawData);
             }
-            if (reportDatesDivEl) { // Potentially hide or adjust report dates for single user view
-                reportDatesDivEl.innerHTML = ''; // Clear previous content
+            if (reportDatesDivEl) {
+                reportDatesDivEl.innerHTML = '';
                 const textPart = document.createTextNode('Displaying data for: ');
                 const emailStrongPart = document.createElement('strong');
-                emailStrongPart.textContent = email; // Safely set the email
+                emailStrongPart.textContent = email;
                 reportDatesDivEl.appendChild(textPart);
                 reportDatesDivEl.appendChild(emailStrongPart);
                 reportDatesDivEl.style.display = 'block';
             }
         } else {
             console.warn(`[DEBUG] No data found for user: ${email} after filtering.`);
-            // Optionally display a message if the user is somehow not found after selection (shouldn't happen)
-            resetUI(`No data found for selected user: ${email}.`); 
+            resetUI(`No data found for selected user: ${email}.`);
         }
     }
 
@@ -1781,5 +1795,100 @@
     }
 
     // --- END OF NEW Search and Autocomplete Functions ---
+
+    /**
+     * Calculates daily prompt interactions (Ask + Edit + Agent requests) for a user.
+     * @param {Array<Object>} userData - The data rows for a specific user.
+     * @returns {Array<{date: Date, interactions: number}>} Array of daily interactions, sorted by date.
+     */
+    function getDailyPromptInteractions(userData) {
+        const dailyData = new Map();
+
+        userData.forEach(row => {
+            const dateStr = row[COLUMN_DATE];
+            const date = parseDate(dateStr);
+            if (!date) return;
+
+            const ask = parseFloat(row[COLUMN_ASK_REQUESTS]) || 0;
+            const edit = parseFloat(row[COLUMN_EDIT_REQUESTS]) || 0;
+            const agent = parseFloat(row[COLUMN_AGENT_REQUESTS]) || 0;
+            const totalInteractions = ask + edit + agent;
+
+            const formattedDate = formatDateWithoutTime(date);
+            dailyData.set(formattedDate, (dailyData.get(formattedDate) || 0) + totalInteractions);
+        });
+
+        // Convert to array and sort by date
+        return Array.from(dailyData.entries())
+            .map(([dateStr, interactions]) => ({
+                date: parseDate(dateStr),
+                interactions: interactions
+            }))
+            .sort((a, b) => a.date - b.date);
+    }
+
+    /**
+     * Renders a line chart showing daily prompt interactions.
+     * @param {Array<{date: Date, interactions: number}>} dailyData - Array of daily interaction counts.
+     * @param {string} chartId - The ID for the chart canvas.
+     * @param {HTMLElement} containerElement - The container to render the chart in.
+     */
+    function renderDailyInteractionsChart(dailyData, chartId, containerElement) {
+        const ctx = createChartCanvas('Daily Prompt Interactions', chartId, containerElement);
+        if (!ctx) return;
+
+        if (!dailyData || dailyData.length === 0) {
+            const chartWrapper = ctx.canvas.parentElement;
+            if (chartWrapper) {
+                chartWrapper.innerHTML = '<h4>Daily Prompt Interactions</h4><p style="text-align: center; padding-top: 20px;">No daily interaction data available.</p>';
+            }
+            return;
+        }
+
+        new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: dailyData.map(d => formatDateWithoutTime(d.date)),
+                datasets: [{
+                    label: 'Prompt Interactions',
+                    data: dailyData.map(d => d.interactions),
+                    borderColor: '#FF00A8',
+                    backgroundColor: 'rgba(255, 0, 168, 0.1)',
+                    borderWidth: 2,
+                    fill: true,
+                    tension: 0.1
+                }]
+            },
+            options: {
+                responsive: true,
+                scales: {
+                    x: {
+                        display: true,
+                        title: {
+                            display: true,
+                            text: 'Date'
+                        }
+                    },
+                    y: {
+                        display: true,
+                        title: {
+                            display: true,
+                            text: 'Interactions'
+                        },
+                        beginAtZero: true
+                    }
+                },
+                plugins: {
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                return `Interactions: ${context.parsed.y}`;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
 
 })(); // End of IIFE
